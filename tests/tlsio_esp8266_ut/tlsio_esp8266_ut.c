@@ -57,11 +57,11 @@ static int g_ssl_write_success = 1;
 typedef enum TLSIO_STATE_TAG
 {
     TLSIO_STATE_NOT_OPEN,
+    TLSIO_STATE_OPEN,
+    TLSIO_STATE_ERROR,
     TLSIO_STATE_OPENING,
     TLSIO_STATE_IN_HANDSHAKE,
-    TLSIO_STATE_OPEN,
-    TLSIO_STATE_CLOSING,
-    TLSIO_STATE_ERROR
+    TLSIO_STATE_CLOSING
 } TLSIO_STATE;
 
 typedef struct TLS_IO_INSTANCE_TAG
@@ -148,6 +148,10 @@ int my_bind(int s, const struct sockaddr* name, socklen_t namelen){
 
 int my_connect(int s, const struct sockaddr *name, socklen_t namelen){
     return 0;
+}
+
+void my_os_delay_us(int us){
+
 }
 
 
@@ -303,8 +307,8 @@ BEGIN_TEST_SUITE(tlsio_esp8266_ut)
     TEST_FUNCTION(tlsio_openssl_dowork__succeed)
     {
         ///arrange
-        int result = 0;
         TLS_IO_INSTANCE instance;
+        instance.tlsio_state = TLSIO_STATE_OPEN;
         instance.on_bytes_received = on_bytes_received;
 
         const IO_INTERFACE_DESCRIPTION* tlsioInterfaces = tlsio_openssl_get_interface_description();
@@ -317,7 +321,6 @@ BEGIN_TEST_SUITE(tlsio_esp8266_ut)
         tlsioInterfaces->concrete_io_dowork(&instance);
         
         ///assert
-        ASSERT_ARE_EQUAL(int, result, 0);
         ASSERT_ARE_EQUAL(char_ptr, umock_c_get_expected_calls(), umock_c_get_actual_calls());
         ///cleanup
     }
@@ -419,21 +422,24 @@ BEGIN_TEST_SUITE(tlsio_esp8266_ut)
     TEST_FUNCTION(tlsio_openssl_close__succeed)
     {
         ///arrange
-        TLS_IO_INSTANCE instance;
-        instance.tlsio_state = TLSIO_STATE_OPEN;
-
+        int result;
         const IO_INTERFACE_DESCRIPTION* tlsioInterfaces = tlsio_openssl_get_interface_description();
         ASSERT_IS_NOT_NULL(tlsioInterfaces);
+
+        TLS_IO_INSTANCE instance;
+        instance.tlsio_state = TLSIO_STATE_OPEN;
 
         umock_c_reset_all_calls();
         STRICT_EXPECTED_CALL(SSL_free(IGNORED_PTR_ARG)).IgnoreArgument(1);
         STRICT_EXPECTED_CALL(SSL_CTX_free(IGNORED_PTR_ARG)).IgnoreArgument(1);
 
         ///act
-        tlsioInterfaces->concrete_io_close(&instance, NULL, NULL);
+        result = tlsioInterfaces->concrete_io_close(&instance, NULL, NULL);
         
         ///assert
         ASSERT_ARE_EQUAL(char_ptr, umock_c_get_expected_calls(), umock_c_get_actual_calls());
+        ASSERT_ARE_EQUAL(int, 0, result);
+        ASSERT_ARE_EQUAL(int, instance.tlsio_state, TLSIO_STATE_NOT_OPEN);
         ///cleanup
     }
 
@@ -448,6 +454,7 @@ BEGIN_TEST_SUITE(tlsio_esp8266_ut)
 
         TLS_IO_INSTANCE instance;
         instance.tlsio_state = TLSIO_STATE_NOT_OPEN;
+
         ///act
         result = tlsioInterfaces->concrete_io_close(&instance, NULL, NULL);
 
@@ -643,6 +650,8 @@ BEGIN_TEST_SUITE(tlsio_esp8266_ut)
     {
         ///arrange
         TLSIO_CONFIG tlsio_config;
+        tlsio_config.hostname = "test";
+        tlsio_config.port = 4242;
 
         OPTIONHANDLER_HANDLE result;
         const IO_INTERFACE_DESCRIPTION* tlsioInterfaces = tlsio_openssl_get_interface_description();
